@@ -36,7 +36,6 @@ AC_TO  = 600
 HDR = ['type', 'subtype', 'sid', 'aid', 'icao', 'fid', 'g_date', 'g_time', 'l_date', 'l_time', 'cs', 'alt', 'gs', 'trk', 'lat', 'lon', 'vr', 'squawk', 'sq_flag', 'emerg', 'ident', 'gnd']
 
 KM_PER_FT = 0.0003048 # km per foot
-FT_PER_KT = 6076.12 # feet per nautical mile
 
 
 class Message(object):
@@ -163,9 +162,9 @@ def do_pos( last, delta, msg ):
 
     Return value is in feet adjusted for last-known ground speed in feet/sec.
     """
-    d = vincenty( last[msg.icao]['pos'], msg.pos ).ft
-    ft_sec = last[msg.icao]['gs'] / 3600.0 * FT_PER_KT
-    delta['pos'].append( d / ft_sec )
+    d = vincenty( last[msg.icao]['pos'], msg.pos ).nm
+    nm_per_sec = last[msg.icao]['gs'] / 3600.0
+    delta['pos'].append( d / nm_per_sec )
 
 
 def mainline_entrypoint():
@@ -227,12 +226,17 @@ def munin_config():
     """
     print """\
 graph_title ADS-B message distribution
-graph_vlabel seconds, normalised feet/second
+graph_vlabel sec, 1 sec displacement ratio
 graph_category dump1090
+graph_info This graph characterises the statistical distribution of received messages by time (in seconds) and by displacement (as a ratio to displacement in one second at current ground speed) on an a/c by a/c basis.  The mean is given for reference, where the standard deviation is an indication of the quality of reception (on the assumption that each a/c transmits on a fairly periodic basis).  A small s.d. indicates that you're receiving most or nearly all messages from each a/c within range.  If you're losing messages, the difference between messages received will be larger by a factor equal to the number of lost messages (+1) and thus will produce a larger s.d.
 ts_sd.label S.d. time interval
+ts_sd.info Standard deviation of inter-message interval in seconds
 ts_mean.label Mean time interval
-pos_sd.label S.d. normalised displacement
-pos_mean.label Mean normalised displacement
+ts_mean.info Mean of inter-message interval in seconds
+pos_sd.label S.d. normalised displacement ratio
+pos_sd.info Standard deviation of inter-message displacement as a ratio to the displacement of the a/c in one second at its last known ground speed
+pos_mean.label Mean normalised displacement ratio
+pos_mean.info Mean of inter-message displacement as a ratio to the displacement of the a/c in one second at its last known ground speed
 """,
     exit()
 
