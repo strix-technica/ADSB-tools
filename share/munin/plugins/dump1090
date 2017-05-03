@@ -1,0 +1,180 @@
+#!/usr/bin/python
+
+from geopy.distance import vincenty
+import json
+from math import radians, cos, sin, asin, sqrt
+import os
+import sys
+import time
+
+KM_PER_FT = 0.0003048
+RX_ALT_KM = KM_PER_FT * 108
+
+JSON_DATA =  '/run/dump1090-mutability'
+STATS_FILE = os.path.join( JSON_DATA, 'stats.json' )
+RECVR_FILE = os.path.join( JSON_DATA, 'receiver.json' )
+
+CONFIG = {
+        'ac': """\
+graph_title ADS-B aircraft count and distance
+graph_category dump1090
+graph_vlabel count and nm
+
+n.label Aircraft count
+n_pos.label Aircraft (with position) count
+avg_range.label Average distance
+max_range.label Maximum distance
+""",
+        'cpu': """\
+graph_title ADS-B CPU utilisation
+graph_category dump1090
+graph_vlabel %
+
+usb.label USB wait
+demod.label Demodulation
+bg.label Network I/O
+""",
+        'messages': """\
+graph_title ADS-B message count
+graph_category dump1090
+graph_vlabel messages/second
+
+good0.label Good Mode S messages
+good1.label Good Mode S messages (1 bit error)
+good2.label Good Mode S messages (2 bit error)
+""",
+#modes.label Total Mode S preambles
+#modes_bad.label Bad Mode S messages
+#unk_icao.label Possibly bad Mode S messages
+        'quality': """\
+graph_title ADS-B signal quality problems
+graph_category dump1090
+graph_vlabel %
+graph_order bad unknown sp_track
+graph_args -A -l 0
+
+bad.label Bad Mode-S messages
+bad.draw AREA
+unknown.label Unknown Mode-S messages
+unknown.draw STACK
+sp_track.label Single-point tracks
+sp_track.draw LINE1
+""",
+        'signal': """\
+graph_title ADS-B signal strength
+graph_category dump1090
+graph_vlabel dBFS
+
+mean.label Mean signal strength
+peak.label Peak signal strength
+noise.label Noise floor
+""",
+        'tracks': """\
+graph_title ADS-B track count
+graph_category dump1090
+graph_vlabel count
+
+total.label Total tracks
+single.label Single-point tracks
+""",
+        }
+
+
+def do_config( which ):
+    print CONFIG[which],
+    exit(0)
+
+
+def do_fetch( which ):
+    if which == 'ac':
+        with open( RECVR_FILE ) as f:
+            receiver = json.load( f )
+        n_hist = int( receiver['history'] )
+        rx_pos = (receiver['lat'], receiver['lon'], RX_ALT_KM,)
+        data = []
+        for i in range( n_hist ):
+            fn = os.path.join( JSON_DATA, 'history_%s.json' % (i,) )
+            with open( fn ) as f:
+                d = json.load( f )
+            data.append( (d['now'], d['aircraft'],) )
+        data.sort()
+
+        ac_n = set()
+        ac_n_pos = set()
+        dist = []
+        for ts, d in data[-10:]: # ten 30 second intervals = 5 mins
+            for ac in d:
+                ac_n.add( ac['hex'] )
+                if 'lat' in ac and 'lon' in ac and 'altitude' in ac:
+                    ac_n_pos.add( ac['hex'] )
+                    d = vincenty( rx_pos, (ac['lat'], ac['lon'], ac['altitude'] * KM_PER_FT,) ).nm
+                    dist.append( d )
+        avg_dist = sum( dist ) / max( len( dist ), 1 )
+        max_dist = max( dist )
+        print 'n.value %s' % (len(ac_n),)
+        print 'n_pos.value %s' % (len(ac_n_pos),)
+        print 'avg_range.value %.1f' % (avg_dist,)
+        print 'max_range.value %.1f' % (max_dist,)
+        return
+
+
+    with open( STATS_FILE ) as f:
+        data = json.load( f )['last5min']
+    
+    if which == 'cpu':
+        # 300,000 msec per 5 mins, but want percentage
+        print 'usb.value %.3f' % (data['cpu']['reader'] / 3000.0,)
+        print 'demod.value %.3f' % (data['cpu']['demod'] / 3000.0,)
+        print 'bg.value %.3f' % (data['cpu']['background'] / 3000.0,)
+
+    if which == 'messages':
+        #print 'modes.value %.1f' % (data['local']['modes'] / (5 * 60.0),)
+        #print 'modes_bad.value %.1f' % (data['local']['bad'] / (5 * 60.0),)
+        #print 'unk_icao.value %.1f' % (data['local']['unknown_icao'] / (5 * 60.0),)
+        print 'good0.value %.1f' % (data['local']['accepted'][0] / (5 * 60.0),)
+        print 'good1.value %.1f' % (data['local']['accepted'][1] / (5 * 60.0),)
+        print 'good2.value %.1f' % (data['local']['accepted'][2] / (5 * 60.0),)
+
+    if which == 'quality':
+        total = float(data['local']['modes'])
+
+        print 'bad.value %.3f' % (float(data['local']['bad']) / total * 100,)
+        print 'unknown.value %.3f' % (float(data['local']['unknown_icao']) / total * 100,)
+
+        print 'sp_track.value %.3f' % (float(data['tracks']['single_message']) / float(data['tracks']['all']) * 100,)
+    if which == 'signal':
+        print 'mean.value %.1f' % (data['local']['signal'],)
+        print 'peak.value %.1f' % (data['local']['peak_signal'],)
+        print 'noise.value %.1f' % (data['local']['noise'],)
+
+    if which == 'tracks':
+        print 'total.value %.1f' % (data['tracks']['all'],)
+        print 'single.value %.1f' % (data['tracks']['single_message'],)
+
+
+def haversine( lat1, lon1, lat2, lon2):
+    """
+    Calculate the great circle distance between two points 
+    on the earth (specified in decimal degrees)
+    """
+    # convert decimal degrees to radians 
+    lon1, lat1, lon2, lat2 = map( radians, [lon1, lat1, lon2, lat2,] )
+    # haversine formula 
+    dlat = lat2 - lat1 
+    dlon = lon2 - lon1 
+    a = sin(dlat/2)**2 + cos(lat1) * cos(lat2) * sin(dlon/2)**2
+    c = 2 * asin(sqrt(a)) 
+    return 3437 * c # nautical miles @ FL100
+
+
+if __name__ == '__main__':
+    which = sys.argv[0].rsplit( '_', 1 )[1]
+
+    if len(sys.argv) == 2 and sys.argv[1] == 'config':
+        do_config( which )
+    else:
+        do_fetch( which )
+
+
+
+# vim: tabstop=8 expandtab shiftwidth=4 softtabstop=4
