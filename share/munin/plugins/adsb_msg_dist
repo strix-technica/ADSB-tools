@@ -29,6 +29,9 @@ PID_FILE = '/var/run/adsb-msg-dist.pid'
 USER   = 'munin' # for daemon mode
 GROUP  = 'adm'
 
+# Messages older than this will be ignored
+AC_TO  = 600
+
 # Non-config constants
 HDR = ['type', 'subtype', 'sid', 'aid', 'icao', 'fid', 'g_date', 'g_time', 'l_date', 'l_time', 'cs', 'alt', 'gs', 'trk', 'lat', 'lon', 'vr', 'squawk', 'sq_flag', 'emerg', 'ident', 'gnd']
 
@@ -173,8 +176,13 @@ def mainline_entrypoint():
         * generate distribution of the resultant intervals
         * write out results for Munin every TIMER seconds and
     """
+    # XXX Override for debugging
+    #TIMER = 3
+
     last = collections.defaultdict( lambda: {'ts': None, 'pos': None, 'gs': None} )
 
+    global AC_TO
+    AC_TO = datetime.timedelta( seconds = AC_TO )
     while True:
         delta = {'ts': [], 'pos': []}
         time.sleep( TIMER - time.time() % TIMER )
@@ -185,11 +193,14 @@ def mainline_entrypoint():
 
             # Calculate deltas
             if last[msg.icao]['ts']:
-                do_ts( last, delta, msg )
+                # Check that last time this a/c was seen was recent enough that
+                # this message can be assumed to be part of the same track
+                if last[msg.icao]['ts'] > (datetime.datetime.now() - AC_TO) or True:
+                    do_ts( last, delta, msg )
 
-            if last[msg.icao]['pos'] and last[msg.icao]['gs'] and msg.pos:
-                # Process position, not velocity messages
-                do_pos( last, delta, msg )
+                    if last[msg.icao]['pos'] and last[msg.icao]['gs'] and msg.pos:
+                        # Process position, not velocity messages
+                        do_pos( last, delta, msg )
 
             # Update last-known information
             last[msg.icao]['ts'] = msg.ts
@@ -207,7 +218,7 @@ ts_sd.value %s
 ts_mean.value %s
 pos_sd.value %s
 pos_mean.value %s
-""" % (ts_mean, ts_sd, pos_mean, pos_sd,),
+""" % (ts_sd, ts_mean, pos_sd, pos_mean,),
 
 
 def munin_config():
@@ -237,9 +248,9 @@ def munin_data():
         with open( STATS_FILE ) as f:
             print f.read(),
 
-        # Once read, make sure it isn't accidentally re-read (at least a chance
-        # to detect race conditions)
-        os.unlink( STATS_FILE )
+        # There is a potential race condition here with Munin.  If the stats file
+        # takes too long to be written out or Munin is too quick to invoke this
+        # routine, it'll get old data and the new data will get lost.
     except OSError:
         pass
 
@@ -341,7 +352,6 @@ elif len(sys.argv) == 2 and sys.argv[1] == 'fg':
     log_sh = logging.StreamHandler()
     log_sh.setFormatter( log_fmt )
     logger.addHandler( log_sh )
-    TIMER = 3 # XXX hack for debugging
     do_collector()
 
 elif len(sys.argv) == 2 and sys.argv[1] == 'daemon':
