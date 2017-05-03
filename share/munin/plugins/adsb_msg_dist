@@ -1,0 +1,360 @@
+#!/usr/bin/python
+# encoding: utf-8
+
+# Requires geopy and, optionally, python-daemon
+
+import collections
+import csv
+import datetime
+from geopy.distance import vincenty
+import logging
+import logging.handlers
+import math
+import Queue
+import os
+import socket
+import sys
+import threading
+import time
+
+# Config
+SERVER = '192.168.0.6'
+PORT   = 30003
+TIMER  = 300
+
+LOG_FILE = '/var/log/adsb-msg-dist.log'
+STATS_FILE = '/var/run/adsb-msg-dist.dat'
+PID_FILE = '/var/run/adsb-msg-dist.pid'
+
+USER   = 'munin' # for daemon mode
+GROUP  = 'adm'
+
+# Non-config constants
+HDR = ['type', 'subtype', 'sid', 'aid', 'icao', 'fid', 'g_date', 'g_time', 'l_date', 'l_time', 'cs', 'alt', 'gs', 'trk', 'lat', 'lon', 'vr', 'squawk', 'sq_flag', 'emerg', 'ident', 'gnd']
+
+KM_PER_FT = 0.0003048 # km per foot
+FT_PER_KT = 6076.12 # feet per nautical mile
+
+
+class Message(object):
+    """
+    ADS-B message class (subset)
+    """
+    def __init__( self, d ):
+        self.ts = datetime.datetime.strptime( d['g_date'] + d['g_time'] + '000',
+                                              '%Y/%m/%d%H:%M:%S.%f' )
+        self.icao = d['icao']
+        self.lat = self.lon = self.alt = self.gs = None
+
+        if d['lat']:
+            self.lat = float( d['lat'] )
+        if d['lon']:
+            self.lon = float( d['lon'] )
+        if d['alt']:
+            self.alt = float( d['alt'] ) * KM_PER_FT # geopy wants metric
+        if d['gs']:
+            self.gs  = int( d['gs'] )
+
+    @property
+    def pos( self ):
+        if self.lat is not None and self.lon is not None and self.alt is not None:
+            return (self.lat, self.lon, self.alt,)
+        else:
+            return None
+
+    def __unicode__( self ):
+        return u"%s: %s → %s° %s° %s' @ %s kts" % (
+                self.ts.strftime( '%H:%M:%S.%f' ),
+                self.icao,
+                self.lat and self.lat or '-', self.lon and self.lon or '-',
+                self.alt and (self.alt / KM_PER_FT) or '-',
+                self.gs and self.gs or '-',)
+    def __repr__( self ):
+        return unicode( self ).encode( 'utf-8' )
+
+
+class StreamToLogger(object):
+    """
+    Fake file-like stream object that redirects writes to a logger instance.
+    """
+    def __init__(self, logger, handler, log_level=logging.INFO):
+        self.logger = logger
+        self.handler = handler
+        self.log_level = log_level
+        self.linebuf = ''
+ 
+    def write(self, buf):
+        for line in buf.rstrip().splitlines():
+            self.logger.log(self.log_level, line.rstrip())
+
+    def fileno( self ):
+        return self.handler.stream.fileno()
+ 
+
+def init_socket():
+    """
+    (Re)acquire TCP connection to SBS data source.  Returns a CSV reader.
+    """
+    s = socket.socket( socket.AF_INET, socket.SOCK_STREAM )
+    while run:
+        try:
+            s.connect( (SERVER, PORT,) )
+            break
+        except socket.error, e:
+            if e.errno == 111:
+                logger.info( 'waiting for %s:%s' % (SERVER, PORT,) )
+                time.sleep( 0.5 )
+            else:
+                raise
+    logger.info( '(re)connected to %s:%s' % (SERVER, PORT,) )
+    return csv.reader( s.makefile() )
+
+
+def mean_sd( data ):
+    """
+    Returns a tuple of (mean, sample_std_deviation) for the given data
+    """
+    if not data:
+        return (None, None,)
+
+    n = len( data )
+    mean = sum( data ) / float(n)
+    ssd = math.sqrt( sum( (x - mean)**2 for x in data ) / n )
+
+    return (mean, ssd,)
+
+
+run = True
+msgs = Queue.Queue()
+def input_thread_entrypoint():
+    """
+    (TCP) input thread entry point.
+    
+    Relays messages via queue `msgs`.
+    """
+    while True:
+        # Attempt to retry connection should the socket close
+        s = init_socket()
+        for d in s:
+            if not run:
+                return
+
+            d = dict( zip( HDR, d ) )
+            if d['type'] == 'MSG' and d['subtype'] in ['3', '4']:
+                msgs.put( Message( d ) )
+
+
+def do_ts( last, delta, msg ):
+    """
+    Calculate and record the time interval since the last message for this a/c
+    """
+    d = msg.ts - last[msg.icao]['ts']
+    d = d.seconds + d.microseconds / 1e6
+    delta['ts'].append( d )
+
+
+def do_pos( last, delta, msg ):
+    """
+    Calculate and record the distance interval since the last positional message
+    for this a/c.  NB: we don't calculate differences on velocity updates.
+
+    Return value is in feet adjusted for last-known ground speed in feet/sec.
+    """
+    d = vincenty( last[msg.icao]['pos'], msg.pos ).ft
+    ft_sec = last[msg.icao]['gs'] / 3600.0 * FT_PER_KT
+    delta['pos'].append( d / ft_sec )
+
+
+def mainline_entrypoint():
+    """
+    Mainline processing code entry point:
+        * process queued messages, combine alt with gs info where possible
+        * estimate intervals
+        * generate distribution of the resultant intervals
+        * write out results for Munin every TIMER seconds and
+    """
+    last = collections.defaultdict( lambda: {'ts': None, 'pos': None, 'gs': None} )
+
+    while True:
+        delta = {'ts': [], 'pos': []}
+        time.sleep( TIMER - time.time() % TIMER )
+        n = msgs.qsize()
+
+        for i in xrange(n):
+            msg = msgs.get()
+
+            # Calculate deltas
+            if last[msg.icao]['ts']:
+                do_ts( last, delta, msg )
+
+            if last[msg.icao]['pos'] and last[msg.icao]['gs'] and msg.pos:
+                # Process position, not velocity messages
+                do_pos( last, delta, msg )
+
+            # Update last-known information
+            last[msg.icao]['ts'] = msg.ts
+            if msg.pos:
+                last[msg.icao]['pos'] = msg.pos
+            if msg.gs:
+                last[msg.icao]['gs'] = msg.gs
+
+        ts_mean, ts_sd = mean_sd( delta['ts'] )
+        pos_mean, pos_sd = mean_sd( delta['pos'] )
+
+        with open( STATS_FILE, 'w' ) as f:
+            print >>f, """\
+ts_sd.value %s
+ts_mean.value %s
+pos_sd.value %s
+pos_mean.value %s
+""" % (ts_mean, ts_sd, pos_mean, pos_sd,),
+
+
+def munin_config():
+    """
+    Output Munin config data
+    """
+    print """\
+graph_title ADS-B message distribution
+graph_vlabel seconds, normalised feet/second
+graph_category dump1090
+ts_sd.label S.d. time interval
+ts_mean.label Mean time interval
+pos_sd.label S.d. normalised displacement
+pos_mean.label Mean normalised displacement
+""",
+    exit()
+
+
+def munin_data():
+    """
+    Output recorded Munin data
+    """
+    if not os.path.isfile( STATS_FILE ):
+        print 'stats file %s missing' % (STATS_FILE,)
+        exit()
+    try:
+        with open( STATS_FILE ) as f:
+            print f.read(),
+
+        # Once read, make sure it isn't accidentally re-read (at least a chance
+        # to detect race conditions)
+        os.unlink( STATS_FILE )
+    except OSError:
+        pass
+
+    exit()
+
+
+def do_collector():
+    """
+    Run the collector in the foreground (debugging)
+    """
+    global run
+    input_thread = threading.Thread( target = input_thread_entrypoint )
+    input_thread.start()
+    try:
+        mainline_entrypoint()
+    except KeyboardInterrupt:
+        run = False
+
+
+def signal_handler( signum, frame ):
+    """
+    Unix signal handler, required for daemon mode.
+    """
+    import signal
+
+    if signum == signal.SIGTERM:
+        global run
+        run = False
+        exit()
+
+
+def do_daemon( stdout = None, stderr = None ):
+    """
+    Run collector as a Unix daemon.  Must have python-daemon installed.
+    """
+    import daemon
+    import grp
+    import pwd
+    import signal
+
+    os.umask( 0022 )
+    uid = pwd.getpwnam( USER ).pw_uid
+    gid = grp.getgrnam( GROUP ).gr_gid
+
+    if os.path.exists( PID_FILE ):
+        pid = open( PID_FILE ).read().strip()
+        if pid:
+            try:
+                pid = int(pid)
+            except ValueError:
+                logger.error( "Bad PID in %s: %s" % (PID_FILE, pid,) )
+            # Check whether in fact actually running
+            try:
+                os.kill( pid, 0 )
+            except OSError:
+                pass
+            else:
+                logger.error( "Attempt to start second instance" ) 
+                exit(1)
+
+    # Make output files writeable by unprivileged user
+    open( PID_FILE, 'w' ).close()
+    os.chown( PID_FILE, uid, gid )
+    open( STATS_FILE, 'w' ).close()
+    os.chown( STATS_FILE, uid, gid )
+
+    context = daemon.DaemonContext(
+                detach_process = True,
+                umask = 0022,
+                uid = uid,
+                gid = gid,
+                stderr = stderr,
+                stdout = stdout,
+                signal_map = { signal.SIGTERM: signal_handler, },
+                )
+    with context:
+        pid = os.getpid()
+        with open( PID_FILE, 'w' ) as f:
+            print >>f, pid
+
+        logger.info( "daemon started (pid = %s)" % (pid,) )
+        do_collector()
+    exit(0)
+
+
+
+logger = logging.getLogger( 'adsb-msg-dist' )
+logger.setLevel( logging.INFO )
+log_fmt = logging.Formatter( '%(asctime)s %(levelname)s: %(message)s ' )
+
+# Handle Munin
+if len(sys.argv) == 2 and sys.argv[1] == 'config':
+    munin_config()
+elif len(sys.argv) == 1:
+    munin_data()
+
+# Collect data
+elif len(sys.argv) == 2 and sys.argv[1] == 'fg':
+    log_sh = logging.StreamHandler()
+    log_sh.setFormatter( log_fmt )
+    logger.addHandler( log_sh )
+    TIMER = 3 # XXX hack for debugging
+    do_collector()
+
+elif len(sys.argv) == 2 and sys.argv[1] == 'daemon':
+    log_fh = logging.handlers.WatchedFileHandler( LOG_FILE )
+    log_fh.setFormatter( log_fmt )
+    logger.addHandler( log_fh )
+    stdout = StreamToLogger( logger, log_fh, logging.INFO )
+    stderr = StreamToLogger( logger, log_fh, logging.ERROR )
+    do_daemon( stdout, stderr )
+
+else:
+    print 'Munin usage    : %s [config]' % (os.path.basename( sys.argv[0] ),)
+    print 'Collector usage: %s <fg|daemon>' % (os.path.basename( sys.argv[0] ),)
+    exit(1)
+
+# vim: tabstop=8 expandtab shiftwidth=4 softtabstop=4
