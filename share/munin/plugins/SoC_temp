@@ -1,0 +1,15 @@
+#!/bin/bash
+
+case $1 in
+   config)
+        cat <<'EOM'
+graph_title System-on-Chip temperature
+graph_vlabel °C
+graph_category system
+temp.label Temperature
+EOM
+        exit 0;;
+esac
+
+temp=$(cat /sys/class/thermal/thermal_zone0/temp)
+echo temp.value ${temp:0: -3}.${temp: -3}
