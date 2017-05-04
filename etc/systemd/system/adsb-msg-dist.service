@@ -1,0 +1,12 @@
+[Unit]
+Description=ADS-B message distribution monitor
+After=network.target
+
+[Service]
+Type=forking
+ExecStart=/usr/local/share/munin/plugins/adsb_msg_dist daemon
+ExecStartPost=/bin/sleep 0.3
+PIDFile=/var/run/adsb-msg-dist.pid
+
+[Install]
+WantedBy=multi-user.target
