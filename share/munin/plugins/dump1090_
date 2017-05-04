@@ -94,6 +94,12 @@ graph_vlabel dBFS
 mean.label Mean signal strength
 peak.label Peak signal strength
 noise.label Noise floor
+mean_snr.label Mean signal SNR
+mean_snr.cdef mean,noise,-
+mean_snr.colour 330099
+peak_snr.label Peak signal SNR
+peak_snr.cdef peak,noise,-
+peak_snr.colour 440057
 """,
         'tracks': """\
 graph_title ADS-B track count
