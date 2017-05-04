@@ -1,5 +1,31 @@
 #!/usr/bin/python
 
+# dump1090 statistics plugin for Munin
+# Copyright (c) 2017 David King
+# https://github.com/strix-technica/ADSB-tools
+#
+# NB:
+#   * Requires geopy and a fairly recent version of dump1090.  Tested with
+#     dump1090-mutability.
+#   * Receiver latitude and longitude must be set on the dump1090 command
+#     line or this programme will throw an exception.
+#   * This is a wildcard plugin and requires special installation.  See
+#     README.md for installation and usage instructions.
+#
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 2 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
 from geopy.distance import vincenty
 import json
 from math import radians, cos, sin, asin, sqrt
@@ -8,11 +34,14 @@ import sys
 import time
 
 KM_PER_FT = 0.0003048
-RX_ALT_KM = KM_PER_FT * 108
+
+# --- Configuration begins ---
+RX_ALT_KM = KM_PER_FT * 108 # feet
 
 JSON_DATA =  '/run/dump1090-mutability'
 STATS_FILE = os.path.join( JSON_DATA, 'stats.json' )
 RECVR_FILE = os.path.join( JSON_DATA, 'receiver.json' )
+# --- Configuration ends ---
 
 CONFIG = {
         'ac': """\
@@ -43,9 +72,6 @@ good0.label Good Mode S messages
 good1.label Good Mode S messages (1 bit error)
 good2.label Good Mode S messages (2 bit error)
 """,
-#modes.label Total Mode S preambles
-#modes_bad.label Bad Mode S messages
-#unk_icao.label Possibly bad Mode S messages
         'quality': """\
 graph_title ADS-B signal quality problems
 graph_category dump1090
@@ -81,12 +107,19 @@ single.label Single-point tracks
 
 
 def do_config( which ):
+    """
+    Output Munin config data
+    """
     print CONFIG[which],
     exit(0)
 
 
 def do_fetch( which ):
+    """
+    Output recorded Munin data
+    """
     if which == 'ac':
+        # Read statistics and receiver location; altitude is set at top of file
         with open( RECVR_FILE ) as f:
             receiver = json.load( f )
         n_hist = int( receiver['history'] )
@@ -99,6 +132,7 @@ def do_fetch( which ):
             data.append( (d['now'], d['aircraft'],) )
         data.sort()
 
+        # Count unique aircraft and distance from receiver for last 5 mins
         ac_n = set()
         ac_n_pos = set()
         dist = []
@@ -120,7 +154,7 @@ def do_fetch( which ):
 
     with open( STATS_FILE ) as f:
         data = json.load( f )['last5min']
-    
+
     if which == 'cpu':
         # 300,000 msec per 5 mins, but want percentage
         print 'usb.value %.3f' % (data['cpu']['reader'] / 3000.0,)
@@ -128,9 +162,6 @@ def do_fetch( which ):
         print 'bg.value %.3f' % (data['cpu']['background'] / 3000.0,)
 
     if which == 'messages':
-        #print 'modes.value %.1f' % (data['local']['modes'] / (5 * 60.0),)
-        #print 'modes_bad.value %.1f' % (data['local']['bad'] / (5 * 60.0),)
-        #print 'unk_icao.value %.1f' % (data['local']['unknown_icao'] / (5 * 60.0),)
         print 'good0.value %.1f' % (data['local']['accepted'][0] / (5 * 60.0),)
         print 'good1.value %.1f' % (data['local']['accepted'][1] / (5 * 60.0),)
         print 'good2.value %.1f' % (data['local']['accepted'][2] / (5 * 60.0),)
@@ -152,21 +183,6 @@ def do_fetch( which ):
         print 'single.value %.1f' % (data['tracks']['single_message'],)
 
 
-def haversine( lat1, lon1, lat2, lon2):
-    """
-    Calculate the great circle distance between two points 
-    on the earth (specified in decimal degrees)
-    """
-    # convert decimal degrees to radians 
-    lon1, lat1, lon2, lat2 = map( radians, [lon1, lat1, lon2, lat2,] )
-    # haversine formula 
-    dlat = lat2 - lat1 
-    dlon = lon2 - lon1 
-    a = sin(dlat/2)**2 + cos(lat1) * cos(lat2) * sin(dlon/2)**2
-    c = 2 * asin(sqrt(a)) 
-    return 3437 * c # nautical miles @ FL100
-
-
 if __name__ == '__main__':
     which = sys.argv[0].rsplit( '_', 1 )[1]
 
@@ -174,7 +190,6 @@ if __name__ == '__main__':
         do_config( which )
     else:
         do_fetch( which )
-
 
 
 # vim: tabstop=8 expandtab shiftwidth=4 softtabstop=4

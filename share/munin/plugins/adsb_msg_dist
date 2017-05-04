@@ -1,7 +1,26 @@
 #!/usr/bin/python
 # encoding: utf-8
 
-# Requires geopy and, optionally, python-daemon
+# ADS-B message distribution analysis plugin for Munin
+# Copyright (c) 2017 David King
+# https://github.com/strix-technica/ADSB-tools
+#
+# NB: Requires geopy and (to be of any use) python-daemon.  See README.md
+#     for installation and usage instructions.
+#
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 2 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 import collections
 import csv
@@ -17,7 +36,7 @@ import sys
 import threading
 import time
 
-# Config
+# --- Configuration begins ---
 SERVER = '192.168.0.6'
 PORT   = 30003
 TIMER  = 300
@@ -31,6 +50,7 @@ GROUP  = 'adm'
 
 # Messages older than this will be ignored
 AC_TO  = 600
+# --- Configuration ends ---
 
 # Non-config constants
 HDR = ['type', 'subtype', 'sid', 'aid', 'icao', 'fid', 'g_date', 'g_time', 'l_date', 'l_time', 'cs', 'alt', 'gs', 'trk', 'lat', 'lon', 'vr', 'squawk', 'sq_flag', 'emerg', 'ident', 'gnd']
@@ -84,14 +104,14 @@ class StreamToLogger(object):
         self.handler = handler
         self.log_level = log_level
         self.linebuf = ''
- 
+
     def write(self, buf):
         for line in buf.rstrip().splitlines():
             self.logger.log(self.log_level, line.rstrip())
 
     def fileno( self ):
         return self.handler.stream.fileno()
- 
+
 
 def init_socket():
     """
@@ -131,7 +151,7 @@ msgs = Queue.Queue()
 def input_thread_entrypoint():
     """
     (TCP) input thread entry point.
-    
+
     Relays messages via queue `msgs`.
     """
     while True:
@@ -252,9 +272,9 @@ def munin_data():
         with open( STATS_FILE ) as f:
             print f.read(),
 
-        # There is a potential race condition here with Munin.  If the stats file
-        # takes too long to be written out or Munin is too quick to invoke this
-        # routine, it'll get old data and the new data will get lost.
+        # There is a potential race condition here with Munin.  If the stats
+        # file takes too long to be written out or Munin is too quick to invoke
+        # this routine, it'll get old data and the new data will get lost.
     except OSError:
         pass
 
@@ -295,10 +315,15 @@ def do_daemon( stdout = None, stderr = None ):
     import pwd
     import signal
 
+    # Ensure files are world-readable by default
     os.umask( 0022 )
+
+    # Get IDs of user and group
     uid = pwd.getpwnam( USER ).pw_uid
     gid = grp.getgrnam( GROUP ).gr_gid
 
+    # Check for existing PID file and, if exists, check whether there is a
+    # daemon already running
     if os.path.exists( PID_FILE ):
         pid = open( PID_FILE ).read().strip()
         if pid:
@@ -312,15 +337,16 @@ def do_daemon( stdout = None, stderr = None ):
             except OSError:
                 pass
             else:
-                logger.error( "Attempt to start second instance" ) 
+                logger.error( "Attempt to start second instance" )
                 exit(1)
 
-    # Make output files writeable by unprivileged user
+    # Make PID and stats files writeable by unprivileged user
     open( PID_FILE, 'w' ).close()
     os.chown( PID_FILE, uid, gid )
     open( STATS_FILE, 'w' ).close()
     os.chown( STATS_FILE, uid, gid )
 
+    # Prepare daemon environment
     context = daemon.DaemonContext(
                 detach_process = True,
                 umask = 0022,
@@ -331,6 +357,7 @@ def do_daemon( stdout = None, stderr = None ):
                 signal_map = { signal.SIGTERM: signal_handler, },
                 )
     with context:
+        # Now in forked daemon, so write out PID file
         pid = os.getpid()
         with open( PID_FILE, 'w' ) as f:
             print >>f, pid
