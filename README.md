@@ -19,7 +19,7 @@ At present, there are three tools in this repository, all of them
 Recent forks of antirez's excellent `dump1090` ADS-B decoder, notably
 [mutability's fork](https://github.com/mutability/dump1090), either have the
 built-in web server disabled or removed completely.  Instead, they write out
-data in json format which can be served using lighttpd or similar.
+data in JSON format which can be served using lighttpd or similar.
 
 This plugin uses those same JSON data to generate
 [Munin](http://guide.munin-monitoring.org/en/latest/index.html) plots so you
@@ -46,9 +46,9 @@ will probably differ from those you see in the web interface.
 * Average and maximum aircraft distance
 * CPU utilisation (demodulation, USB and network I/O)
 * Accepted message count (showing those with 1 and 2 bit errors corrected,
-* where available)
+  where available)
 * Signal quality problems (bad and unknown Mode S messages, and also the
-* percentage of tracks containing only one position point)
+  percentage of tracks containing only one position point)
 * Signal strength (average and peak signal and noise floor)
 * Total track count and single-point track count 
 
@@ -83,7 +83,7 @@ sudo systemctl restart munin-node
 ```
 * Install a web server if you don't already have one running.  You may already
   have lighttpd running if you followed Mutability's install instructions, in
-  which case I've supplied a config file for Munin (for http://<ip>/munin):
+  which case I've supplied a config file for Munin (for http://raspberry.local/munin):
 ```
 sudo cp /usr/local/etc/lighttpd/conf-available/89-munin.conf /etc/lighttpd/conf-available
 sudo lighty-enable-mod munin
@@ -148,9 +148,9 @@ There are several reasons why it'll never work out that way:
   message](http://woodair.net/sbs/Article/Barebones42_Socket_Data.htm), some of
   which are triggered by ground radar and TCAS rather than emitted
   periodically.  This will disturb the interval distribution, although this
-  plugin tries to mitigate these by considering message subtypes 3 and 4.
+  plugin tries to mitigate these by considering only message subtypes 3 and 4.
 * Worse still, all transponders transmit on the same frequency without any
-  means to prevent collisions of messages from different aircraft.  Nor does
+  means to prevent collisions of messages from other aircraft.  Nor does
   ADS-B implement CSMA/CD (Carrier Sense Multiple Access/Collision Detection)
   as old-school Ethernet did.  Instead, aircraft transmit periodic messages at
   a random interval of 500 ms ± 100 ms.  Even so, message collisions are
