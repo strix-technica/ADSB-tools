@@ -63,6 +63,26 @@ n_lvl.draw LINESTACK1
 n_asc.label Aircraft ascending
 n_asc.draw LINESTACK1
 
+multigraph dump1090_ac_n_pct
+graph_title ADS-B aircraft altitude change
+graph_category dump1090
+graph_vlabel %
+graph_order n_des=dump1090_ac_n.n_des n_asc=dump1090_ac_n.n_asc n_lvl=dump1090_ac_n.n_lvl n_pos=dump1090_ac_n.n_pos
+
+p_des.label Aircraft descending
+p_des.cdef n_des,n_pos,/,100,*
+p_des.draw LINE1
+p_lvl.label Aircraft level
+p_lvl.cdef n_lvl,n_pos,/,100,*
+p_lvl.draw LINESTACK1
+p_asc.label Aircraft ascending
+p_asc.cdef n_asc,n_pos,/,100,*
+p_asc.draw LINESTACK1
+n_des.graph no
+n_asc.graph no
+n_lvl.graph no
+n_pos.graph no
+
 multigraph dump1090_ac_range
 graph_title ADS-B aircraft distance
 graph_category dump1090
