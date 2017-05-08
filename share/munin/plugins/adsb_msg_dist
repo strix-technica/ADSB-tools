@@ -162,7 +162,7 @@ def input_thread_entrypoint():
                 return
 
             d = dict( zip( HDR, d ) )
-            if d['type'] == 'MSG' and d['subtype'] in ['3', '4']:
+            if d.get( 'type' ) == 'MSG' and d.get( 'subtype' ) in ['3', '4']:
                 msgs.put( Message( d ) )
 
 
