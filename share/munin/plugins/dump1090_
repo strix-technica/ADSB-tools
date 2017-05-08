@@ -26,6 +26,7 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+import collections
 from geopy.distance import vincenty
 import json
 from math import radians, cos, sin, asin, sqrt
@@ -41,16 +42,32 @@ RX_ALT_KM = KM_PER_FT * 108 # feet
 JSON_DATA =  '/run/dump1090-mutability'
 STATS_FILE = os.path.join( JSON_DATA, 'stats.json' )
 RECVR_FILE = os.path.join( JSON_DATA, 'receiver.json' )
+
+# altitude histeresis: a/c are level if alt difference < +- ALT_HIST
+ALT_HIST   = 300
 # --- Configuration ends ---
 
 CONFIG = {
         'ac': """\
-graph_title ADS-B aircraft count and distance
+multigraph dump1090_ac_n
+graph_title ADS-B aircraft count
 graph_category dump1090
-graph_vlabel count and nm
+graph_vlabel count
 
 n.label Aircraft count
 n_pos.label Aircraft (with position) count
+n_des.label Aircraft descending
+n_des.draw LINESTACK1
+n_lvl.label Aircraft level
+n_lvl.draw LINESTACK1
+n_asc.label Aircraft ascending
+n_asc.draw LINESTACK1
+
+multigraph dump1090_ac_range
+graph_title ADS-B aircraft distance
+graph_category dump1090
+graph_vlabel nm
+
 avg_range.label Average distance
 max_range.label Maximum distance
 """,
@@ -60,8 +77,11 @@ graph_category dump1090
 graph_vlabel %
 
 usb.label USB wait
-demod.label Demodulation
+usb.draw LINESTACK1
 bg.label Network I/O
+bg.draw LINESTACK1
+demod.label Demodulation
+demod.draw LINESTACK1
 """,
         'messages': """\
 graph_title ADS-B message count
@@ -69,8 +89,11 @@ graph_category dump1090
 graph_vlabel messages/second
 
 good0.label Good Mode S messages
+good0.draw LINESTACK1
 good1.label Good Mode S messages (1 bit error)
+good1.draw LINESTACK1
 good2.label Good Mode S messages (2 bit error)
+good2.draw LINESTACK1
 """,
         'quality': """\
 graph_title ADS-B signal quality problems
@@ -139,20 +162,38 @@ def do_fetch( which ):
         data.sort()
 
         # Count unique aircraft and distance from receiver for last 5 mins
-        ac_n = set()
-        ac_n_pos = set()
+        ac_n     = set()
+        ac_n_pos = collections.defaultdict( lambda: {'alt_s': None, 'alt_e': None,} )
         dist = []
         for ts, d in data[-10:]: # ten 30 second intervals = 5 mins
             for ac in d:
                 ac_n.add( ac['hex'] )
                 if 'lat' in ac and 'lon' in ac and 'altitude' in ac:
-                    ac_n_pos.add( ac['hex'] )
+                    if ac_n_pos[ac['hex']]['alt_s'] is None:
+                        ac_n_pos[ac['hex']]['alt_s'] = ac['altitude']
+                    ac_n_pos[ac['hex']]['alt_e'] = ac['altitude']
                     d = vincenty( rx_pos, (ac['lat'], ac['lon'], ac['altitude'] * KM_PER_FT,) ).nm
                     dist.append( d )
         avg_dist = sum( dist ) / max( len( dist ), 1 )
         max_dist = max( dist )
+        alt_asc = alt_des = alt_lvl = 0
+        for alts in ac_n_pos.values():
+            d = int(alts['alt_e']) - int(alts['alt_s'])
+            if d > ALT_HIST:
+                alt_asc += 1
+            elif d < -ALT_HIST:
+                alt_des += 1
+            else:
+                alt_lvl += 1
+
+        print 'multigraph dump1090_ac_n'
         print 'n.value %s' % (len(ac_n),)
         print 'n_pos.value %s' % (len(ac_n_pos),)
+        print 'n_asc.value %s' % (alt_asc,)
+        print 'n_lvl.value %s' % (alt_lvl,)
+        print 'n_des.value %s' % (alt_des,)
+
+        print 'multigraph dump1090_ac_range'
         print 'avg_range.value %.1f' % (avg_dist,)
         print 'max_range.value %.1f' % (max_dist,)
         return
