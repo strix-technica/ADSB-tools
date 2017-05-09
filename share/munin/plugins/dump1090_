@@ -43,8 +43,9 @@ JSON_DATA =  '/run/dump1090-mutability'
 STATS_FILE = os.path.join( JSON_DATA, 'stats.json' )
 RECVR_FILE = os.path.join( JSON_DATA, 'receiver.json' )
 
-# altitude histeresis: a/c are level if alt difference < +- ALT_HIST
-ALT_HIST   = 300
+# altitude hysteresis: a/c are level if alt difference < +- ALT_HIST
+# Set fairly high to distinguish between FL changes and departure/arrivals
+ALT_HIST   = 4500
 # --- Configuration ends ---
 
 CONFIG = {
