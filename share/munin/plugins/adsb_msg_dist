@@ -235,9 +235,13 @@ def mainline_entrypoint():
             print >>f, """\
 ts_sd.value %s
 ts_mean.value %s
+ts_n.value %s
 pos_sd.value %s
 pos_mean.value %s
-""" % (ts_sd, ts_mean, pos_sd, pos_mean,),
+pos_n.value %s
+""" % (ts_sd, ts_mean, len(delta['ts']), pos_sd, pos_mean, len(delta['pos']),),
+
+        f.close()
 
 
 def munin_config():
@@ -253,10 +257,12 @@ ts_sd.label S.d. time interval
 ts_sd.info Standard deviation of inter-message interval in seconds
 ts_mean.label Mean time interval
 ts_mean.info Mean of inter-message interval in seconds
+ts_n.label ts sample size
 pos_sd.label S.d. normalised displacement ratio
 pos_sd.info Standard deviation of inter-message displacement as a ratio to the displacement of the a/c in one second at its last known ground speed
 pos_mean.label Mean normalised displacement ratio
 pos_mean.info Mean of inter-message displacement as a ratio to the displacement of the a/c in one second at its last known ground speed
+pos_n.label pos sample size
 """,
     exit()
 
