@@ -210,21 +210,27 @@ def mainline_entrypoint():
         for i in xrange(n):
             msg = msgs.get()
 
-            # Calculate deltas
-            if last[msg.icao]['ts']:
-                # Check that last time this a/c was seen was recent enough that
-                # this message can be assumed to be part of the same track
-                if last[msg.icao]['ts'] > (datetime.datetime.now() - AC_TO) or True:
-                    do_ts( last, delta, msg )
+            # Calculate deltas when:
+            #   - we have last position and ground speed, and
+            #   - the last information we have is new enough to be considered
+            #     part of a contiguous track
+            #   - this is a new positional message
+            if ( last[msg.icao]['pos'] and
+                 last[msg.icao]['gs']  and
+                (last[msg.icao]['ts'] > (datetime.datetime.now( ) - AC_TO)) and
+                    msg.pos):
 
-                    if last[msg.icao]['pos'] and last[msg.icao]['gs'] and msg.pos:
-                        # Process position, not velocity messages
-                        do_pos( last, delta, msg )
+                do_ts( last, delta, msg )
+                # Process position, not velocity messages
+                do_pos( last, delta, msg )
 
-            # Update last-known information
-            last[msg.icao]['ts'] = msg.ts
+            # Update last-known information; only consider a/c transmitting
+            # position and velocity data for timestamps because we need to
+            # know their range in order to know how to weight their
+            # contribution to the distribution.
             if msg.pos:
                 last[msg.icao]['pos'] = msg.pos
+                last[msg.icao]['ts']  = msg.ts
             if msg.gs:
                 last[msg.icao]['gs'] = msg.gs
 
