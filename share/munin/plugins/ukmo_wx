@@ -1,0 +1,164 @@
+#!/usr/bin/python
+# encoding: utf-8
+
+# ukmo_wx UK Met Office weather plugin for Munin
+# Copyright (c) 2017 David King
+# https://github.com/strix-technica/ADSB-tools
+#
+# NB: 
+#   - See README for configuration
+#   - 'list' mode requires python-geopy installed AND that you've
+#     configured your location
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 2 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+import collections
+import datetime
+import os
+import requests
+import string
+import sys
+import time
+
+# --- Configuration begins ---
+KEY = '' # see README
+LOC = 'all'
+
+# Ordered list of stations to record.  Hint: try executing this script
+# similar to "./ukmo_wx list 50" after you've configured the position
+PLACES = collections.OrderedDict( [
+                (u'3772'  , u'heathrow',),
+        ] )
+
+# You can delete any of these you don't want output
+GRAPHS = {
+             'wx_temp': ('Temperature', u'°C', 'T',),
+             'wx_wind_dir': ('Wind direction', u'°', 'D',),
+             'wx_wind_spd': ('Wind speed', 'kts', 'S',),
+             'wx_press': ('Pressure', 'hPa', 'P',),
+             'wx_rh': ('Relative humidity', '%', 'H',),
+         }
+
+# Receiver position.  Only required for list output.
+RX_LAT    = 51.567
+RX_LON    =  0.123
+RX_ALT_KM = 108 * 0.0003048 # kilometers per feet
+RX_POS    = (RX_LAT, RX_LON, RX_ALT_KM,)
+# --- Configuration ends ---
+
+URL_HR = 'http://datapoint.metoffice.gov.uk/public/data/val/wxobs/all/json/%(loc)s?res=hourly&time=%(time)s&key=%(key)s'
+URL_ALL = 'http://datapoint.metoffice.gov.uk/public/data/val/wxobs/all/json/all?res=hourly&key=%(key)s'
+
+COMPASS = ['N', 'NNE', 'NE', 'ENE', 'E', 'ESE', 'SE', 'SSE',
+           'S', 'SSW', 'SW', 'WSW', 'W', 'WNW', 'NW', 'NNW',
+           ]
+COMPASS = {x: i*22.5 for x, i in zip( COMPASS, range(len(COMPASS)) )}
+
+
+def do_config():
+    """
+    Output Munin config data
+    """
+    for grh, labels in GRAPHS.iteritems():
+        args = '-A'
+        if grh == 'wx_press':
+            # Don't scale Y axis units; use tighter autoscaling for Y
+            args += ' -X 0 -Y'
+        print (u"""\
+multigraph %s
+graph_title %s
+graph_category wx
+graph_vlabel %s
+graph_args %s
+average.label Average of all stations
+average.colour 000000
+average.draw LINE3
+""" % ((grh,) + labels[:-1] + (args,))).encode( 'latin-1' ),
+        for name in PLACES.values():
+            print '%s.label %s' % (name, name.capitalize(),)
+        print
+    exit(0)
+
+
+def do_fetch():
+    """
+    Output recorded Munin data
+    """
+    utcnow = datetime.datetime.utcnow()
+    req = requests.get( URL_HR % {'key': KEY, 'loc': LOC, 'time': utcnow.strftime( '%Y-%m-%dT%HZ' ), } )
+    if not req.ok:
+        print >> sys.stderr, "Unexpected return code", req.status_code
+        exit(1)
+
+    data = filter( lambda x: x['i'] in PLACES,
+                   req.json()['SiteRep']['DV']['Location'] )
+    data = {x['i']: x['Period']['Rep'] for x in data}
+    for grh, gr_labels in GRAPHS.iteritems():
+        print 'multigraph', grh
+        all_data = []
+        for pl, name in PLACES.iteritems():
+            try:
+                val = data[pl][gr_labels[-1]]
+            except KeyError:
+                continue
+            if gr_labels[-1] == 'D':
+                val = COMPASS.get( val, '' )
+            all_data.append( float(val) )
+            print '%s.value %s' % (name, val,)
+        print 'average.value %s' % (sum(all_data) / len(all_data),)
+
+
+def do_list( limit ):
+    """
+    Generate list of PLACES suitable for configuration section in ascending
+    order of distance.  This requires that:
+        - python-geopy is installed
+        - RX_POS is defined as tuple of (lat, lon, alt) of your position.
+          NB: alt must be in kilometers.
+
+    Usage: ./wx list [limit]
+
+        where limit is the distance in nautical miles you want.  Defaults to
+        350.
+    """
+    from geopy.distance import vincenty
+
+    req = requests.get( URL_ALL % {'key': KEY,} )
+    if not req.ok:
+        print >> sys.stderr, "Unexpected return code", req.status_code
+        exit(1)
+
+    punct_strip = {ord(x): None for x in string.punctuation}
+    punct_strip[ord(' ')] = u'-'
+
+    by_dist = [(vincenty( RX_POS, (x['lat'],x['lon'],float(x['elevation'])/1000,) ).nm, x,) for x in req.json()['SiteRep']['DV']['Location']]
+    by_dist.sort()
+    print '\n'.join( '\t\t(%10s %-35s), # %5.1f nm' % (`x[1]['i']`+',', `x[1]['name'].lower().translate( punct_strip )`+',', x[0],) for x in filter( lambda x: x[0] < limit, by_dist ) )
+
+
+if __name__ == '__main__':
+    if len(sys.argv) == 2 and sys.argv[1] == 'config':
+        do_config()
+    elif len(sys.argv) >= 2 and sys.argv[1] == 'list':
+        if len(sys.argv) == 3:
+            limit = int(sys.argv[2])
+        else:
+            limit = 350
+
+        do_list( limit )
+    else:
+        do_fetch()
+
+
+# vim: tabstop=8 expandtab shiftwidth=4 softtabstop=4

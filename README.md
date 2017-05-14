@@ -6,11 +6,12 @@ monitoring, particularly on the Raspberry Pi.
 All of what follows assumes that you have unpacked or cloned this repository in
 `/usr/local` (recommended to avoid collisions with distribution packages).
 
-At present, there are three tools in this repository, all of them
+At present, there are four tools in this repository, all of them
 [Munin](http://munin-monitoring.org/) plugins:
 
 * dump1090 monitor
 * ADS-B message distribution analysis
+* UK Met Office weather
 * Raspberry Pi SoC (CPU) temperature monitor
 
 
@@ -190,6 +191,35 @@ sudo systemctl start adsb-msg-dist
 ```
 cd /etc/munin/plugins
 sudo ln -s /usr/local/share/munin/plugins/adsb-msg-dist
+sudo systemctl restart munin-node
+```
+
+
+## UK Met Office weather
+
+This uses the public UK Met Office [hourly site-specific observations](http://www.metoffice.gov.uk/datapoint/product/uk-hourly-site-specific-observations)
+API to record **current** basic weather data in Munin.  These data are only
+updated hourly so they're fairly coarse, but they should be fairly reliable.
+
+
+### Installation
+
+* [Apply for a UK Met Office DataPoint API key](http://www.metoffice.gov.uk/datapoint/api) if you don't already have one.
+* Install Munin as per the `dump1090_` plugin instructions.
+* Edit the configuration parameters at the top of `/usr/local/share/munin/plugins/ukmo_wx`:
+  * You **must** configure the API key for this plugin to work.
+  * Optional, but recommended, set your latitude, longitude and altitude. As
+    written, you can input your altitude in feet but it must end up in
+    kilometers.  That's what the multiplier fraction is for.
+  * Configure what stations you want to record.  Don't configure too many or
+    Munin's graphs will be indecipherable.  If you've configured your location,
+    you can get a ready-made list of the stations within, say, 60 miles by
+    executing the command:
+       `/usr/local/share/munin/plugins/ukmo_wx list 60`
+* Enable the plugin:
+```
+cd /etc/munin/plugins
+sudo ln -s /usr/local/share/munin/plugins/SoC_temp
 sudo systemctl restart munin-node
 ```
 
