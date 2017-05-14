@@ -219,7 +219,7 @@ updated hourly so they're fairly coarse, but they should be fairly reliable.
 * Enable the plugin:
 ```
 cd /etc/munin/plugins
-sudo ln -s /usr/local/share/munin/plugins/SoC_temp
+sudo ln -s /usr/local/share/munin/plugins/ukmo_wx
 sudo systemctl restart munin-node
 ```
 
