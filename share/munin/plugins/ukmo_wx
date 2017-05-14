@@ -115,7 +115,7 @@ def do_fetch():
             if gr_labels[-1] == 'D':
                 val = COMPASS.get( val, '' )
             if gr_labels[-1] == 'S':
-                val *= 1.15078 # knots per mph
+                val /= 1.15078 # mph per knot
             all_data.append( float(val) )
             print '%s.value %s' % (name, val,)
         print 'average.value %s' % (sum(all_data) / len(all_data),)
