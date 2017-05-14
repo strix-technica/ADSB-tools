@@ -51,7 +51,7 @@ will probably differ from those you see in the web interface.
 * Signal quality problems (bad and unknown Mode S messages, and also the
   percentage of tracks containing only one position point)
 * Signal strength (average and peak signal and noise floor)
-* Total track count and single-point track count 
+* Total track count and single-point track count
 
 ### Installation
 

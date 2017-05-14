@@ -5,7 +5,7 @@
 # Copyright (c) 2017 David King
 # https://github.com/strix-technica/ADSB-tools
 #
-# NB: 
+# NB:
 #   - See README for configuration
 #   - 'list' mode requires python-geopy installed AND that you've
 #     configured your location
@@ -114,6 +114,8 @@ def do_fetch():
                 continue
             if gr_labels[-1] == 'D':
                 val = COMPASS.get( val, '' )
+            if gr_labels[-1] == 'S':
+                val *= 1.15078 # knots per mph
             all_data.append( float(val) )
             print '%s.value %s' % (name, val,)
         print 'average.value %s' % (sum(all_data) / len(all_data),)
