@@ -123,11 +123,8 @@ def init_socket():
             s.connect( (SERVER, PORT,) )
             break
         except socket.error, e:
-            if e.errno == 111:
-                logger.info( 'waiting for %s:%s' % (SERVER, PORT,) )
-                time.sleep( 0.5 )
-            else:
-                raise
+            logger.info( 'waiting for %s:%s' % (SERVER, PORT,) )
+            time.sleep( 0.5 )
     logger.info( '(re)connected to %s:%s' % (SERVER, PORT,) )
     return csv.reader( s.makefile() )
 
