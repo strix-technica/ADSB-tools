@@ -72,13 +72,13 @@ graph_order n_des=dump1090_ac_n.n_des n_asc=dump1090_ac_n.n_asc n_lvl=dump1090_a
 
 p_des.label Aircraft descending
 p_des.cdef n_des,n_pos,/,100,*
-p_des.draw LINE1
+p_des.draw AREA
 p_lvl.label Aircraft level
 p_lvl.cdef n_lvl,n_pos,/,100,*
-p_lvl.draw LINESTACK1
+p_lvl.draw STACK
 p_asc.label Aircraft ascending
 p_asc.cdef n_asc,n_pos,/,100,*
-p_asc.draw LINESTACK1
+p_asc.draw STACK
 n_des.graph no
 n_asc.graph no
 n_lvl.graph no
@@ -193,7 +193,15 @@ def do_fetch( which ):
                     if ac_n_pos[ac['hex']]['alt_s'] is None:
                         ac_n_pos[ac['hex']]['alt_s'] = ac['altitude']
                     ac_n_pos[ac['hex']]['alt_e'] = ac['altitude']
-                    d = vincenty( rx_pos, (ac['lat'], ac['lon'], ac['altitude'] * KM_PER_FT,) ).nm
+
+                    try:
+                        d = vincenty( rx_pos, (ac['lat'], ac['lon'], ac['altitude'] * KM_PER_FT,) ).nm
+                    except TypeError:
+                        print >>sys.stderr, "couldn't calc distance for a/c at lat %s (%s) lon %s (%s) alt %s (%s) " % (ac['lat'], type(ac['lat']),
+                                        ac['lon'], type(ac['lon']),
+                                        ac['altitude'], type(ac['altitude']),)
+                        continue
+
                     dist.append( d )
         avg_dist = sum( dist ) / max( len( dist ), 1 )
         max_dist = max( dist )
