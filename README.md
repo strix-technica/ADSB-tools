@@ -206,7 +206,7 @@ updated hourly so they're fairly coarse, but they should be fairly reliable.
 
 * [Apply for a UK Met Office DataPoint API key](http://www.metoffice.gov.uk/datapoint/api) if you don't already have one.
 * Install Munin as per the `dump1090_` plugin instructions.
-* Edit the configuration parameters at the top of `/usr/local/share/munin/plugins/ukmo_wx`:
+* Edit the configuration parameters at the top of `/usr/local/share/munin/plugins/ukmo_wx_config.py`:
   * You **must** configure the API key for this plugin to work.
   * Optional, but recommended, set your latitude, longitude and altitude. As
     written, you can input your altitude in feet but it must end up in
