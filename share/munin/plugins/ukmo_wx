@@ -81,12 +81,14 @@ graph_title %s
 graph_category wx
 graph_vlabel %s
 graph_args %s
-average.label Average of all stations
-average.colour 000000
-average.draw LINE3
 """ % ((grh,) + labels[:-1] + (args,))).encode( 'latin-1' ),
         for name in PLACES.values():
             print '%s.label %s' % (name, name.capitalize(),)
+        print u"""\
+average.label Average of all stations
+average.colour 000000
+average.draw LINE3
+"""
         print
     exit(0)
 
