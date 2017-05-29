@@ -240,6 +240,7 @@ def do_fetch( which ):
         print 'bg.value %.3f' % (data['cpu']['background'] / 3000.0,)
 
     if which == 'messages':
+        data['local']['accepted'] += [0] * 3
         print 'good0.value %.1f' % (data['local']['accepted'][0] / (5 * 60.0),)
         print 'good1.value %.1f' % (data['local']['accepted'][1] / (5 * 60.0),)
         print 'good2.value %.1f' % (data['local']['accepted'][2] / (5 * 60.0),)
