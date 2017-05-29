@@ -192,6 +192,8 @@ def do_fetch( which ):
             for ac in d:
                 ac_n.add( ac['hex'] )
                 if 'lat' in ac and 'lon' in ac and 'altitude' in ac:
+                    if ac['altitude'] == 'ground':
+                        ac['altitude'] = 0
                     if ac_n_pos[ac['hex']]['alt_s'] is None:
                         ac_n_pos[ac['hex']]['alt_s'] = ac['altitude']
                     ac_n_pos[ac['hex']]['alt_e'] = ac['altitude']
