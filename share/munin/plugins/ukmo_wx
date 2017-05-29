@@ -79,7 +79,7 @@ def do_fetch():
         exit(1)
 
     data = filter( lambda x: x['i'] in PLACES,
-                   req.json()['SiteRep']['DV']['Location'] )
+                   req.json()['SiteRep']['DV'].get( 'Location', [] ) )
     data = {x['i']: x['Period']['Rep'] for x in data}
     for grh, gr_labels in GRAPHS.iteritems():
         print 'multigraph', grh
@@ -95,7 +95,8 @@ def do_fetch():
                 val = float(val) / 1.15078 # mph per knot
             all_data.append( float(val) )
             print '%s.value %s' % (name, val,)
-        print 'average.value %s' % (sum(all_data) / len(all_data),)
+        if all_data:
+            print 'average.value %s' % (sum(all_data) / len(all_data),)
 
 
 def do_list( limit ):
