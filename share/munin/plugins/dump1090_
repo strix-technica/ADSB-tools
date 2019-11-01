@@ -191,19 +191,19 @@ def do_fetch( which ):
         for ts, d in data[-10:]: # ten 30 second intervals = 5 mins
             for ac in d:
                 ac_n.add( ac['hex'] )
-                if 'lat' in ac and 'lon' in ac and 'altitude' in ac:
-                    if ac['altitude'] == 'ground':
-                        ac['altitude'] = 0
+                if 'lat' in ac and 'lon' in ac and 'nav_altitude_mcp' in ac:
+                    if ac['nav_altitude_mcp'] == 'ground':
+                        ac['nav_altitude_mcp'] = 0
                     if ac_n_pos[ac['hex']]['alt_s'] is None:
-                        ac_n_pos[ac['hex']]['alt_s'] = ac['altitude']
-                    ac_n_pos[ac['hex']]['alt_e'] = ac['altitude']
+                        ac_n_pos[ac['hex']]['alt_s'] = ac['nav_altitude_mcp']
+                    ac_n_pos[ac['hex']]['alt_e'] = ac['nav_altitude_mcp']
 
                     try:
-                        d = vincenty( rx_pos, (ac['lat'], ac['lon'], ac['altitude'] * KM_PER_FT,) ).nm
+                        d = vincenty( rx_pos, (ac['lat'], ac['lon'], ac['nav_altitude_mcp'] * KM_PER_FT,) ).nm
                     except TypeError:
                         print >>sys.stderr, "couldn't calc distance for a/c at lat %s (%s) lon %s (%s) alt %s (%s) " % (ac['lat'], type(ac['lat']),
                                         ac['lon'], type(ac['lon']),
-                                        ac['altitude'], type(ac['altitude']),)
+                                        ac['nav_altitude_mcp'], type(ac['nav_altitude_mcp']),)
                         continue
 
                     dist.append( d )
