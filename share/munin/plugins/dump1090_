@@ -207,8 +207,12 @@ def do_fetch( which ):
                         continue
 
                     dist.append( d )
-        avg_dist = sum( dist ) / max( len( dist ), 1 )
-        max_dist = max( dist )
+        if len(dist) > 0:
+            avg_dist = sum( dist ) / len( dist )
+            max_dist = max( dist )
+        else:
+            avg_dist = float('nan')
+            max_dist = float('nan')
         alt_asc = alt_des = alt_lvl = 0
         for alts in ac_n_pos.values():
             d = int(alts['alt_e']) - int(alts['alt_s'])
